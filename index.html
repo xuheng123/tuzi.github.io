@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+        <title>火车AR展示</title>
+        <script src="build/three.js"></script>
+        <script src="js/libs/inflate.min.js"></script>
+        <script src="js/loaders/FBXLoader.js"></script>
+        <script src="js/controls/OrbitControls.js"></script>  
+        <style>
+			body {
+				font-family: Monospace;
+				background-color: #000;
+				color: #fff;
+				margin: 0px;
+				overflow: hidden;
+			}
+			#info {
+				color: #fff;
+				position: absolute;
+				top: 10px;
+				width: 100%;
+				text-align: center;
+				z-index: 100;
+				display:block;
+			}
+			#info a {
+				color: #046;
+				font-weight: bold;
+			}
+		</style>
+            <button id="btn" onclick="startAnimation()">
+                <!-- 返回 -->
+            </button><style>
+            button{
+                width:100px;
+                height:34px;
+                position: absolute;
+                right: 36%;
+                top: 92%;
+                /*color: white;*/
+                /*background-color: #222222;*/
+                background: transparent;
+                background-image: url('models/fbx/on.png');
+                border: 0px solid white;
+                background-size:100% 100%;
+                overflow:hidden;
+                cursor: pointer;
+            }
+            </style>
+        <script >
+          
+            var mixer;
+            var clock = new THREE.Clock();
+            var renderer;
+            var progressBarDiv;
+            var controls;         
+            var targetObj;
+            var container;
+            var action;
+            function initThree() {
+                container = document.createElement( 'div' );
+				document.body.appendChild( container );
+                renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				container.appendChild( renderer.domElement );
+
+                window.addEventListener( 'resize', onWindowResize, false );
+
+                progressBarDiv = document.createElement( 'div' );
+                progressBarDiv.innerText = "Loading...";
+                progressBarDiv.style.fontSize = "3em";
+                progressBarDiv.style.color = "#888";
+                progressBarDiv.style.display = "block";
+                progressBarDiv.style.position = "absolute";
+                progressBarDiv.style.top = "50%";
+                progressBarDiv.style.width = "100%";
+                progressBarDiv.style.textAlign = "center";
+            }
+
+            var camera;
+            function initCamera() {
+                camera = new THREE.PerspectiveCamera(45,   window.innerWidth / window.innerHeight, 1, 10000);
+                camera.position.set(0,0,140);
+            }
+
+            var scene;
+            function initScene() {
+                scene = new THREE.Scene();
+            }
+
+            var light;
+            function initLight() {
+               light = new THREE.HemisphereLight( 0xffffff, 0x444444 );
+                light.position.set( 0, 200, 0 );
+                scene.add( light );
+
+                light = new THREE.DirectionalLight( 0xffffff );
+                light.position.set( 0, 200, 100 );
+                light.castShadow = true;
+                light.shadow.camera.top = 180;
+                light.shadow.camera.bottom = - 100;
+                light.shadow.camera.left = - 120;
+                light.shadow.camera.right = 120;
+                scene.add( light );
+            }
+
+
+            var mesh;
+            var geometry;
+            var material;
+
+            function initObject() {
+                scene = new THREE.Scene();
+                geometry = new THREE.PlaneGeometry( 220, 250);
+                updateProgressBar( 0 );
+                showProgressBar();
+                  // model
+                var loader = new THREE.FBXLoader();
+                loader.load( 'models/fbx/hexie_ani_1118_4.fbx', function ( object ) {
+
+                    mixer = new THREE.AnimationMixer( object );
+                    for(var i = 0 ; i < object.animations.length; i++){           
+                          action = mixer.clipAction( object.animations[ i ] );           
+                          action.stop(); 
+                          action.reset();
+                        //   action.loop = 2200;   
+                        //   action.clampWhenFinished = true;                  
+                        }
+                        // mixer.clipAction( object.animations[ 0 ] ).play();
+
+                    object.traverse( function ( child ) {
+
+                        if ( child.isMesh ) {
+
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+
+                        }
+
+                    } );
+                    object.scale.set(2,2,2);
+                    object.position.set(0,0,0);
+                    object.rotation.set(0,Math.PI/2,0);
+                    object.name = "train";
+                     targetObj = object;
+                    scene.add( object );
+                    hideProgressBar();
+                }, onProgress, onError );
+
+                var video = document.getElementById('video');
+                var vendorUrl = window.URL || window.webkitURL;
+                var texture;
+
+                navigator.getMedia = navigator.getUserMedia ||
+                                     navigator.webkitGetUserMedia ||
+                                     navigator.mozGetUserMedia ||
+                                     navigator.msGetUserMedia ||
+                                     (navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+                if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
+                   
+                    navigator.mediaDevices.getUserMedia({
+
+                        'audio':false,
+
+                        'video':{ 'facingMode': "environment" }//调用前置摄像头，后置摄像头使用video: { facingMode: { exact: "environment" } }user
+
+                    })
+
+                    .then(function(strem) {
+                        try {
+                          video.srcObject = strem;
+                        } catch (error) {
+                          video.src = URL.createObjectURL(strem);
+                        }
+                        video.play();                   
+                    })
+
+                    .catch(function(error) { console.log(666);console.log(error) })
+
+                }
+                else{
+
+                    alert('苹果暂不支持摄像头调用！')
+
+                }
+                texture = new THREE.VideoTexture( video );//可以直接把视频设为材质
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.format = THREE.RGBFormat;
+
+                material = new THREE.MeshPhongMaterial( { map: texture , side: THREE.DoubleSide} );
+                mesh = new THREE.Mesh(geometry,  material);
+                mesh.position.set(0,0,-240);
+                scene.add(camera);
+                camera.add(mesh);
+
+            // Controls
+            controls = new THREE.OrbitControls( camera, renderer.domElement );
+            controls.minDistance = 2;
+            controls.maxDistance = 200;				
+            controls.update();
+            // window.addEventListener( 'click', onClick );
+            // document.addEventListener('touchstart', onDocumentTouchStart, false);
+            // document.addEventListener('touchmove', onDocumentTouchMove, false);
+            // document.addEventListener( 'touchend', onDocumentTouchEnd, false );
+            // document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+            }
+
+            //访问用户媒体设备的兼容方法
+        function getUserMedia(constrains,success,error){
+            if(navigator.mediaDevices.getUserMedia){
+                //最新标准API
+                navigator.mediaDevices.getUserMedia(constrains).then(success).catch(error);
+            } else if (navigator.webkitGetUserMedia){
+                //webkit内核浏览器
+                navigator.webkitGetUserMedia(constrains).then(success).catch(error);
+            } else if (navigator.mozGetUserMedia){
+                //Firefox浏览器
+                navagator.mozGetUserMedia(constrains).then(success).catch(error);
+            } else if (navigator.getUserMedia){
+                //旧版API
+                navigator.getUserMedia(constrains).then(success).catch(error);
+            }
+        }
+          //成功的回调函数
+        function success(stream){
+            try {
+                      video.srcObject = stream;
+                    } catch (error) {
+                      video.src = URL.createObjectURL(stream);
+                    }
+                    video.play(); 
+        }
+
+        //异常的回调函数
+        function error(error){
+            console.log("访问用户媒体设备失败：",error.name,error.message);
+        }
+        function onClick( event ) {
+        //            var x, y;
+        // var mouse = new THREE.Vector2();
+
+        //             if ( event.changedTouches ) {
+
+        //                 x = event.changedTouches[ 0 ].pageX;
+        //                 y = event.changedTouches[ 0 ].pageY;
+
+        //             } else {
+
+        //                 x = event.clientX;
+        //                 y = event.clientY;
+
+        //             }
+        //             alert('点击到了火车')
+        //             mouse.x = ( x / window.innerWidth ) * 2 - 1;
+        //             mouse.y = - ( y / window.innerHeight ) * 2 + 1;              
+        //             // var mouse = new THREE.Vector2();
+        //             // mouse.x = ( event.touches[0].clientX / renderer.domElement.clientWidth ) * 2 - 1;
+        //             // mouse.y = - ( event.touches[0].clientY / renderer.domElement.clientHeight ) * 2 + 1;
+        //             var raycaster = new THREE.Raycaster();
+        //         raycaster.setFromCamera( mouse, camera );
+        //         var intersects = raycaster.intersectObjects( scene.children,true);
+        //         if ( intersects.length > 0 ) {                    
+        //             for (var i = intersects.length - 1; i >= 0; i--) {
+        //         if(intersects[i].object.parent.name=="train"){
+        //         //    alert('点击到了火车')
+        //         if(action!=undefined){
+        //             mixer = new THREE.AnimationMixer( intersects[i].object.parent );             
+        //             action =mixer.clipAction( intersects[i].object.parent.animations[ 0 ] );    
+        //             action.loop = 2200;
+        //             action.clampWhenFinished = true; 
+        //             action.play(); 
+        //         }
+        //         }   
+        //         }
+
+        //         }
+
+        }
+        function onDocumentMouseDown( event ) {
+
+        var mouse = new THREE.Vector2();
+        mouse.x = ( event.clientX / renderer.domElement.clientWidth ) * 2 - 1;
+        mouse.y = - ( event.clientY / renderer.domElement.clientHeight ) * 2 + 1;
+
+        var raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera( mouse, camera );
+        var intersects = raycaster.intersectObjects( scene.children ,true);
+
+        if ( intersects.length > 1 ) {
+            for (var i = intersects.length - 1; i >= 0; i--) {
+                if(intersects[i].object.parent.name=="train"){
+                //    alert('点击到了火车')
+                mixer = new THREE.AnimationMixer( intersects[i].object.parent );             
+                action =mixer.clipAction( intersects[i].object.parent.animations[ 0 ] );    
+                action.loop = 2200;
+                action.clampWhenFinished = true; 
+                action.play();            
+                }   
+            }
+        }
+
+        }
+        function onDocumentTouchStart( event ) {				
+				if ( event.touches.length == 1 ) {                   
+                    event.preventDefault();                   
+                    var mouse = new THREE.Vector2();
+                    mouse.x = ( event.touches[0].clientX / renderer.domElement.clientWidth ) * 2 - 1;
+                    mouse.y = - ( event.touches[0].clientY / renderer.domElement.clientHeight ) * 2 + 1;
+                    var raycaster = new THREE.Raycaster();
+				raycaster.setFromCamera( mouse, camera );
+				var intersects = raycaster.intersectObjects( scene.children,true);
+				if ( intersects.length > 0 ) {                    
+                    for (var i = intersects.length - 1; i >= 0; i--) {
+                if(intersects[i].object.parent.name=="train"){
+                //    alert('点击到了火车')
+                if(action!=undefined){
+                    mixer = new THREE.AnimationMixer( intersects[i].object.parent );             
+                    action =mixer.clipAction( intersects[i].object.parent.animations[ 0 ] );    
+                    action.loop = 2200;
+                    action.clampWhenFinished = true; 
+                    action.play(); 
+                }
+                }   
+                }
+                }
+
+				}
+
+            }
+            function onDocumentTouchEnd(event){		
+				
+				if ( event.touches.length == 1 ) {
+					 //按下去的时候鼠标相对位置
+                    //  mouseXOnMouseDown = event.layerX - width/2;
+                    // //鼠标按下的旋转角度
+                    // targetRotationOnMouseDown = targetRotation;
+					}
+			}
+            function onDocumentTouchMove(event) {
+                // if (event.touches.length == 1) {
+                //     event.preventaDefault();
+                //     mouseX = event.touches[0].layerX - width/2;
+                //     targetRotation = targetRotationOnMouseDown + (mouseX - mouseXOnMouseDown) * 0.05;
+                // }
+           }
+           function startAnimation(){
+            if(action!=undefined){
+                    mixer = new THREE.AnimationMixer( targetObj );             
+                    action =mixer.clipAction( targetObj.animations[ 0 ] );    
+                    action.loop = 2200;
+                    action.clampWhenFinished = true; 
+                    action.play(); 
+                }
+           }
+           function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+            }
+            function onProgress( xhr ) {
+
+                if ( xhr.lengthComputable ) {
+
+                    updateProgressBar( xhr.loaded / xhr.total );
+
+                    console.log( Math.round( xhr.loaded / xhr.total * 100, 2 ) + '% downloaded' );
+
+                }
+
+            }
+
+            function onError() {
+
+                var message = "Error loading model";
+                progressBarDiv.innerText = message;
+                console.log( message );
+
+            }
+            function updateProgressBar( fraction ) {
+
+                progressBarDiv.innerText = 'Loading... ' + Math.round( fraction * 100, 2 ) + '%';
+
+            }
+            function showProgressBar() {
+
+                document.body.appendChild( progressBarDiv );
+
+            }
+            function hideProgressBar() {
+
+                document.body.removeChild( progressBarDiv );
+
+            }
+
+            function threeStart() {
+                initCamera();
+                initThree();
+                initObject();                
+                initLight();
+                animation();
+            }
+
+            function animation() {
+                requestAnimationFrame(animation);
+                var delta = clock.getDelta();
+
+                 if ( mixer ) mixer.update( delta );
+
+                 renderer.render( scene, camera );
+            }
+
+
+        </script>
+    </head>
+
+    <body onload="threeStart();">
+        <div id="info">
+            <!-- <div class="booth"> -->
+                <video id="video" width="0" height="0"></video>
+                <!-- <canvas id='canvas' width='400' height='300'></canvas> -->
+            <!-- </div> -->
+        </div>
+
+    </body>
+</html>
+
